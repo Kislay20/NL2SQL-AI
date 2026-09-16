@@ -33,6 +33,11 @@ ENV/
 .coverage
 htmlcov/
 
+# SQLite Database Files
+*.db
+*.sqlite
+*.sqlite3
+
 # Streamlit runtime
 .streamlit/secrets.toml
 
