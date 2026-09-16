@@ -89,7 +89,7 @@ st.markdown("---")
 
 # Render Existing Chat History
 history = get_history()
-for idx, msg in enumerate(history):
+for idx, msg in enumerate(st.session_state.messages):
     role = msg["role"]
     content = msg["content"]
 
@@ -136,15 +136,13 @@ for idx, msg in enumerate(history):
                     st.info(explanation)
 
 
-# Capture User Input (Voice Query Microphone, Typed Chat Input, or Sample Question)
-voice_col1, voice_col2 = st.columns([2, 5])
-with voice_col1:
-    voice_query = speech_to_text(
-        start_prompt="🎙️ Speak your query",
-        stop_prompt="⏹️ Stop recording",
-        just_once=True,
-        key="voice_query",
-    )
+# Microphone Voice Query Widget (Anchored cleanly at the bottom, directly above chat input)
+voice_query = speech_to_text(
+    start_prompt="🎙️ Speak your query",
+    stop_prompt="⏹️ Stop recording",
+    just_once=True,
+    key="voice_query",
+)
 
 user_query = st.chat_input("Ask a question about the college database (e.g. 'Show students scoring > 80')...")
 
