@@ -67,7 +67,7 @@ for msg in history:
                     if df.empty:
                         st.info("Query executed successfully, but returned 0 matching records.")
                     else:
-                        st.dataframe(df, use_container_width=True, hide_index=True)
+                        st.dataframe(df, width="stretch", hide_index=True)
 
                     # 3. Dynamic Visualization (Plotly)
                     chart_fig = content.get("chart")
@@ -118,7 +118,7 @@ if active_prompt:
                 if df.empty:
                     st.info("Query executed successfully, but returned 0 matching records.")
                 else:
-                    st.dataframe(df, use_container_width=True, hide_index=True)
+                    st.dataframe(df, width="stretch", hide_index=True)
 
                 # Step D: Dynamic Chart
                 chart_fig = generate_auto_chart(df)

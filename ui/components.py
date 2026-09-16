@@ -71,12 +71,12 @@ def render_sidebar(db_path: Optional[str | Path] = None) -> Optional[str]:
                             "Type": c["type"],
                             "PK": "🔑" if c["pk"] else "",
                         })
-                    st.dataframe(col_data, hide_index=True, use_container_width=True)
+                    st.dataframe(col_data, hide_index=True, width="stretch")
 
                     # Preview sample data
                     if st.checkbox(f"Preview {tbl}", key=f"prev_{tbl}"):
                         sample_df = get_sample_data(tbl, limit=3, db_path=db_path)
-                        st.dataframe(sample_df, hide_index=True, use_container_width=True)
+                        st.dataframe(sample_df, hide_index=True, width="stretch")
 
         except Exception as exc:
             st.error(f"Failed to inspect database schema: {exc}")
