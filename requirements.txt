@@ -20,5 +20,9 @@ SQLAlchemy>=2.0.0
 # Configuration Management
 python-dotenv>=1.0.0
 
+# Speech & Voice Recognition
+streamlit-mic-recorder>=0.0.8
+SpeechRecognition>=3.14.0
+
 # Unit Testing & QA
 pytest>=8.0.0

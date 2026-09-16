@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import streamlit as st
 
+from streamlit_mic_recorder import speech_to_text
+
 from ai.explainer import explain_sql
 from ai.sql_generator import generate_sql
 from database.database import validate_database_connection
@@ -134,9 +136,26 @@ for idx, msg in enumerate(history):
                     st.info(explanation)
 
 
-# Capture User Input from chat input box or sample question button
+# Capture User Input (Voice Query Microphone, Typed Chat Input, or Sample Question)
+voice_col1, voice_col2 = st.columns([2, 5])
+with voice_col1:
+    voice_query = speech_to_text(
+        start_prompt="🎙️ Speak your query",
+        stop_prompt="⏹️ Stop recording",
+        just_once=True,
+        key="voice_query",
+    )
+
 user_query = st.chat_input("Ask a question about the college database (e.g. 'Show students scoring > 80')...")
-active_prompt = clicked_sample if clicked_sample else user_query
+
+# Resolve active prompt (Sample click > Voice transcription > Typed input)
+active_prompt = None
+if clicked_sample:
+    active_prompt = clicked_sample
+elif voice_query and str(voice_query).strip():
+    active_prompt = str(voice_query).strip()
+elif user_query and str(user_query).strip():
+    active_prompt = str(user_query).strip()
 
 if active_prompt:
     # 1. Display and record user question
