@@ -41,7 +41,7 @@ init_history()
 
 # Database Connection Configuration
 with st.sidebar.expander("⚙️ Database Connection", expanded=False):
-    db_uri = st.sidebar.text_input("Database URI", value="sqlite:///college.db")
+    db_uri = st.text_input("Database URI", value="sqlite:///college.db")
 
 # Render Sidebar (Schema explorer, system status, and sample buttons)
 clicked_sample = render_sidebar(db_uri=db_uri)
