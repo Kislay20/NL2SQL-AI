@@ -6,7 +6,7 @@ Verifies chart heuristic selection, session history records, and schema renderin
 from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
-from ui.charts import generate_auto_chart
+from ui.charts import generate_auto_chart, render_dynamic_chart
 from utils.history import init_history, add_message, clear_history, get_history
 
 
@@ -62,3 +62,32 @@ def test_session_history_lifecycle():
 
         clear_history()
         assert len(mock_session_state["messages"]) == 0
+
+
+def test_render_dynamic_chart_heuristics():
+    """Verify render_dynamic_chart follows empty, row count, and column heuristics."""
+    # Empty & 1-row
+    assert render_dynamic_chart(None) is None
+    assert render_dynamic_chart(pd.DataFrame()) is None
+    assert render_dynamic_chart(pd.DataFrame({"a": [1]})) is None
+
+    # Cluttered (> 50 rows)
+    cluttered_df = pd.DataFrame({"dept": ["CS"] * 55, "marks": list(range(55))})
+    assert render_dynamic_chart(cluttered_df) is None
+
+    # 2-column (categorical + numeric)
+    bar_df = pd.DataFrame({"dept": ["CS", "ME", "EE"], "avg_marks": [80.5, 75.0, 82.0]})
+    fig = render_dynamic_chart(bar_df)
+    assert fig is not None
+    assert "Figure" in type(fig).__name__
+
+    # Multi-numeric grouped bar
+    multi_df = pd.DataFrame({
+        "dept": ["CS", "ME"],
+        "min_marks": [60.0, 55.0],
+        "max_marks": [95.0, 90.0],
+    })
+    grouped_fig = render_dynamic_chart(multi_df)
+    assert grouped_fig is not None
+    assert "Figure" in type(grouped_fig).__name__
+

@@ -15,7 +15,7 @@ from ai.explainer import explain_sql
 from ai.sql_generator import generate_sql
 from database.database import validate_database_connection
 from sql.executor import execute_safe_query
-from ui.charts import generate_auto_chart
+from ui.charts import render_dynamic_chart
 from ui.components import render_sidebar
 from utils.history import add_message, get_history, init_history
 
@@ -204,9 +204,9 @@ if active_prompt:
                     )
 
                 # Step D: Dynamic Chart
-                chart_fig = generate_auto_chart(df)
-                if chart_fig:
-                    st.plotly_chart(chart_fig, use_container_width=True)
+                chart = render_dynamic_chart(df)
+                if chart:
+                    st.plotly_chart(chart, use_container_width=True)
 
                 # Step E: AI Explanation
                 with st.spinner("🧠 Generating natural language explanation..."):
@@ -221,7 +221,7 @@ if active_prompt:
                     {
                         "sql": sql_query,
                         "dataframe": df,
-                        "chart": chart_fig,
+                        "chart": chart,
                         "explanation": explanation,
                         "error": None,
                     },
