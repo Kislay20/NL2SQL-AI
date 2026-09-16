@@ -23,6 +23,7 @@ import pandas as pd
 
 from ai.agent import run_agent
 from ai.explainer import explain_sql
+from database.database import validate_database_connection
 from sql.executor import execute_safe_query
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,50 @@ def create_app() -> Flask:
             "service": "NL2SQL AI REST API",
             "version": "1.0.0",
         }), 200
+
+    @app.route("/api/test-connection", methods=["POST"])
+    def test_connection():
+        """Test database connection via SQLAlchemy by executing 'SELECT 1;'.
+
+        Expected JSON payload:
+        {
+            "db_uri": "mysql+pymysql://user:pass@host:port/dbname"
+            (or postgresql+psycopg2://... or sqlite:///college.db)
+        }
+
+        Returns:
+            {"status": "success", "message": "..."} or {"status": "error", "error": "..."}.
+        """
+        if not request.is_json:
+            return jsonify({"status": "error", "error": "Request body must be valid JSON."}), 400
+
+        payload = request.get_json(silent=True)
+        if not payload or not isinstance(payload, dict):
+            return jsonify({"status": "error", "error": "Invalid or missing JSON payload."}), 400
+
+        db_uri = payload.get("db_uri")
+        if not db_uri or not str(db_uri).strip():
+            return jsonify({"status": "error", "error": "The 'db_uri' field is required."}), 400
+
+        clean_uri = str(db_uri).strip()
+        try:
+            is_valid, err_msg = validate_database_connection(clean_uri)
+            if is_valid:
+                return jsonify({
+                    "status": "success",
+                    "message": "Database connection verified successfully!",
+                    "db_uri": clean_uri,
+                }), 200
+            else:
+                return jsonify({
+                    "status": "error",
+                    "error": err_msg or "Failed to connect to database.",
+                }), 400
+        except Exception as exc:
+            return jsonify({
+                "status": "error",
+                "error": f"Connection test failed: {str(exc)}",
+            }), 400
 
     @app.route("/api/query", methods=["POST"])
     def process_query():

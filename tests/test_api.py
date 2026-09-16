@@ -143,3 +143,35 @@ def test_query_endpoint_internal_server_error(client):
         assert response.status_code == 500
         data = response.get_json()
         assert "Internal Server Error" in data["error"]
+
+
+def test_test_connection_success(client):
+    """Verify /api/test-connection returns 200 for valid local SQLite DB."""
+    response = client.post("/api/test-connection", json={"db_uri": "sqlite:///college.db"})
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["status"] == "success"
+    assert "verified" in data["message"].lower()
+
+
+def test_test_connection_missing_payload(client):
+    """Verify 400 status when db_uri is missing or invalid in /api/test-connection."""
+    response = client.post("/api/test-connection", json={})
+    assert response.status_code == 400
+    assert response.get_json()["status"] == "error"
+
+    response = client.post("/api/test-connection", data="not json", content_type="text/plain")
+    assert response.status_code == 400
+
+
+def test_test_connection_invalid_uri(client):
+    """Verify 400 status when db_uri fails connection."""
+    response = client.post(
+        "/api/test-connection",
+        json={"db_uri": "postgresql://invalid_user:pass@127.0.0.1:9999/nonexistent"},
+    )
+    assert response.status_code == 400
+    data = response.get_json()
+    assert data["status"] == "error"
+    assert "error" in data
+
