@@ -177,7 +177,7 @@ class GeminiClient:
                 if status_code == 429 or "resource_exhausted" in err_msg or "quota" in err_msg:
                     if attempt < retries:
                         attempt += 1
-                        time.sleep(backoff_factor * attempt)
+                        time.sleep(max(2.0, backoff_factor * attempt))
                         continue
                     raise RateLimitError(
                         "Gemini API rate limit or quota exceeded. Please wait a moment before trying again."

@@ -85,3 +85,41 @@ def build_sql_prompt(question: str, schema_context: str) -> str:
 User Question: "{question.strip()}"
 SQL:"""
     return prompt
+
+
+# ----------------------------------------------------------------------
+# System Instruction & Prompt for SQL Explanation
+# ----------------------------------------------------------------------
+
+SQL_EXPLANATION_SYSTEM_INSTRUCTION = """You are a friendly, expert data analyst explaining SQLite queries to non-technical users.
+Your goal is to explain what information the query retrieves in clear, natural English.
+
+Rules:
+1. Keep the explanation concise (2 to 3 sentences maximum).
+2. Explain WHAT real-world data is being retrieved, from which tables, and what specific criteria/filters are being applied.
+3. Do NOT describe basic SQL syntax mechanically (avoid 'The SELECT clause gets columns and WHERE filters rows').
+4. Mention any joins, aggregations, or rankings in natural terms (e.g. 'combines student records with exam marks', 'calculates the average mark').
+5. Return ONLY the plain-text English explanation without markdown headings or greetings.
+"""
+
+EXPLANATION_PROMPT_TEMPLATE = """User Question: "{question}"
+Generated SQL:
+{sql_query}
+
+Explain what this query does in 2 to 3 clear, non-technical sentences."""
+
+
+def build_explanation_prompt(question: str, sql_query: str) -> str:
+    """Build the prompt for explaining a generated SQL query.
+
+    Args:
+        question: The user's original natural language question.
+        sql_query: The generated SQL query.
+
+    Returns:
+        Formatted explanation prompt string.
+    """
+    return EXPLANATION_PROMPT_TEMPLATE.format(
+        question=question.strip(),
+        sql_query=sql_query.strip(),
+    )

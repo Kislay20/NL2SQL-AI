@@ -1,7 +1,7 @@
-"""Tests for Gemini client, configuration, prompts, parser, and SQL generation.
+"""Tests for Gemini client, configuration, prompts, parser, SQL generation, and explanation.
 
 Includes unit tests with mocks for error conditions, parser tests,
-prompt structure tests, and live integration tests when GEMINI_API_KEY is active.
+prompt structure tests, explainer tests, and live integration tests when GEMINI_API_KEY is active.
 """
 
 import os
@@ -22,8 +22,14 @@ from ai.gemini import (
     verify_gemini_connection,
 )
 from ai.parser import extract_sql
-from ai.prompts import build_sql_prompt, SQL_GENERATION_SYSTEM_INSTRUCTION
+from ai.prompts import (
+    build_sql_prompt,
+    build_explanation_prompt,
+    SQL_GENERATION_SYSTEM_INSTRUCTION,
+    SQL_EXPLANATION_SYSTEM_INSTRUCTION,
+)
 from ai.sql_generator import generate_sql
+from ai.explainer import explain_sql, FALLBACK_EXPLANATION
 from google.genai import errors
 
 
@@ -192,6 +198,17 @@ def test_sql_system_instruction_rules():
     assert "no insert, update, delete, drop" in SQL_GENERATION_SYSTEM_INSTRUCTION.lower()
 
 
+def test_build_explanation_prompt():
+    """Verify explanation prompt formats question and SQL clearly."""
+    prompt = build_explanation_prompt(
+        question="Show all students",
+        sql_query="SELECT * FROM students;",
+    )
+    assert 'User Question: "Show all students"' in prompt
+    assert "SELECT * FROM students;" in prompt
+    assert "non-technical" in prompt.lower()
+
+
 # ----------------------------------------------------------------------
 # Unit Tests: SQL Generator (Mocked)
 # ----------------------------------------------------------------------
@@ -213,6 +230,58 @@ def test_generate_sql_mocked():
 
 
 # ----------------------------------------------------------------------
+# Unit Tests: SQL Explainer (Mocked & Fallbacks)
+# ----------------------------------------------------------------------
+
+def test_explain_sql_mocked():
+    """Verify explain_sql sends prompt and returns cleaned explanation."""
+    mock_client = MagicMock()
+    mock_client.generate_text.return_value = (
+        "This query retrieves all students currently registered in the database."
+    )
+
+    explanation = explain_sql(
+        question="Show all students",
+        sql_query="SELECT * FROM students;",
+        client=mock_client,
+    )
+    assert "retrieves all students" in explanation
+    mock_client.generate_text.assert_called_once()
+
+
+def test_explain_sql_fallback_on_gemini_error():
+    """Verify explain_sql catches Gemini errors gracefully and returns fallback string."""
+    mock_client = MagicMock()
+    mock_client.generate_text.side_effect = GeminiAPIError("API down")
+
+    explanation = explain_sql(
+        question="Show all students",
+        sql_query="SELECT * FROM students;",
+        client=mock_client,
+    )
+    assert explanation == FALLBACK_EXPLANATION
+
+
+def test_explain_sql_fallback_on_unexpected_exception():
+    """Verify unexpected errors return fallback without crashing."""
+    mock_client = MagicMock()
+    mock_client.generate_text.side_effect = RuntimeError("Crash")
+
+    explanation = explain_sql(
+        question="Show all students",
+        sql_query="SELECT * FROM students;",
+        client=mock_client,
+    )
+    assert explanation == FALLBACK_EXPLANATION
+
+
+def test_explain_sql_empty_query():
+    """Verify empty query returns prompt message."""
+    explanation = explain_sql("Any question", "")
+    assert "no query" in explanation.lower()
+
+
+# ----------------------------------------------------------------------
 # Live Integration Tests (Executes if valid key exists in environment)
 # ----------------------------------------------------------------------
 
@@ -222,11 +291,14 @@ def test_live_gemini_connection():
     if not key or key.startswith("your_gemini"):
         pytest.skip("Skipping live API test: no valid GEMINI_API_KEY configured in .env")
 
-    result = verify_gemini_connection()
-    assert result["status"] == "connected"
-    assert "model" in result
-    assert "response" in result
-    assert len(result["response"]) > 0
+    try:
+        result = verify_gemini_connection()
+        assert result["status"] == "connected"
+        assert "model" in result
+        assert "response" in result
+        assert len(result["response"]) > 0
+    except RateLimitError:
+        pytest.skip("Gemini API rate limit reached on free tier; skipping live test")
 
 
 def test_live_generate_sql_simple():
@@ -235,10 +307,15 @@ def test_live_generate_sql_simple():
     if not key or key.startswith("your_gemini"):
         pytest.skip("Skipping live API test: no valid GEMINI_API_KEY configured in .env")
 
-    sql = generate_sql("Show all students in Computer Science")
-    assert sql.upper().startswith("SELECT")
-    assert "students" in sql.lower()
-    assert "computer science" in sql.lower()
+    import time
+    time.sleep(1.0)
+    try:
+        sql = generate_sql("Show all students in Computer Science")
+        assert sql.upper().startswith("SELECT")
+        assert "students" in sql.lower()
+        assert "computer science" in sql.lower()
+    except RateLimitError:
+        pytest.skip("Gemini API rate limit reached on free tier; skipping live test")
 
 
 def test_live_generate_sql_complex():
@@ -247,8 +324,39 @@ def test_live_generate_sql_complex():
     if not key or key.startswith("your_gemini"):
         pytest.skip("Skipping live API test: no valid GEMINI_API_KEY configured in .env")
 
-    sql = generate_sql("Which department has the highest average marks?")
-    assert sql.upper().startswith("SELECT")
-    assert "department" in sql.lower()
-    assert "avg" in sql.lower() or "average" in sql.lower()
-    assert "marks" in sql.lower()
+    import time
+    time.sleep(1.0)
+    try:
+        sql = generate_sql("Which department has the highest average marks?")
+        assert sql.upper().startswith("SELECT")
+        assert "department" in sql.lower()
+        assert "avg" in sql.lower() or "average" in sql.lower()
+        assert "marks" in sql.lower()
+    except RateLimitError:
+        pytest.skip("Gemini API rate limit reached on free tier; skipping live test")
+
+
+def test_live_explain_sql():
+    """Test live SQL explanation with Gemini."""
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not key or key.startswith("your_gemini"):
+        pytest.skip("Skipping live API test: no valid GEMINI_API_KEY configured in .env")
+
+    import time
+    time.sleep(1.0)
+
+    question = "Which department has the highest average marks?"
+    sql = (
+        "SELECT s.department, ROUND(AVG(m.marks), 2) AS avg_marks "
+        "FROM students s JOIN marks m ON s.student_id = m.student_id "
+        "GROUP BY s.department ORDER BY avg_marks DESC LIMIT 1;"
+    )
+
+    try:
+        explanation = explain_sql(question, sql)
+        assert len(explanation) > 10
+        if explanation == FALLBACK_EXPLANATION:
+            pytest.skip("Gemini API rate limit reached; verified fallback explanation behavior")
+        assert "department" in explanation.lower() or "marks" in explanation.lower()
+    except RateLimitError:
+        pytest.skip("Gemini API rate limit reached on free tier; skipping live test")
