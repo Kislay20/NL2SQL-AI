@@ -21,6 +21,7 @@ Strict Rules:
 3. Correctly identify and utilize foreign keys when joining tables (e.g. students.student_id = marks.student_id, subjects.subject_id = marks.subject_id).
 4. For text filtering, use case-insensitive comparisons (e.g., LOWER(s.department) = LOWER('Computer Science') or LIKE).
 5. Return ONLY the raw SQL query. Do NOT include markdown code fences (```sql), conversational text, apologies, or explanations.
+6. Support user queries written in English, Hindi, or Hinglish (e.g., 'CS department ke sabse top students dikhao'). Seamlessly translate the Hindi/Hinglish intent into the corresponding English schema tables and columns.
 """
 
 # Few-shot demonstration pairs
@@ -56,6 +57,14 @@ FEW_SHOT_EXAMPLES: List[Tuple[str, str]] = [
     (
         "Show the top 5 students based on highest marks.",
         "SELECT s.name, MAX(m.marks) AS max_marks FROM students s JOIN marks m ON s.student_id = m.student_id GROUP BY s.student_id ORDER BY max_marks DESC LIMIT 5;",
+    ),
+    (
+        "Computer Science department mein kitne bacche hain?",
+        "SELECT COUNT(*) AS student_count FROM students WHERE LOWER(department) = 'computer science';",
+    ),
+    (
+        "Wo students dikhao jinke marks 80 se zyada hain aur attendance 75 se kam hai.",
+        "SELECT DISTINCT s.name, m.marks, a.attendance_percentage FROM students s JOIN marks m ON s.student_id = m.student_id JOIN attendance a ON s.student_id = a.student_id AND m.subject_id = a.subject_id WHERE m.marks > 80.0 AND a.attendance_percentage < 75.0;",
     ),
 ]
 
