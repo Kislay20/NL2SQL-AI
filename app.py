@@ -16,6 +16,16 @@ from ui.charts import generate_auto_chart
 from ui.components import render_sidebar
 from utils.history import add_message, get_history, init_history
 
+
+# ----------------------------------------------------------------------
+# Helper: Efficient Data Export Caching
+# ----------------------------------------------------------------------
+@st.cache_data
+def convert_df_to_csv(df):
+    """Convert pandas DataFrame to UTF-8 encoded CSV bytes for download."""
+    return df.to_csv(index=False).encode("utf-8")
+
+
 # ----------------------------------------------------------------------
 # Page Configuration & Aesthetics
 # ----------------------------------------------------------------------
@@ -42,7 +52,7 @@ st.markdown("---")
 
 # Render Existing Chat History
 history = get_history()
-for msg in history:
+for idx, msg in enumerate(history):
     role = msg["role"]
     content = msg["content"]
 
@@ -68,6 +78,14 @@ for msg in history:
                         st.info("Query executed successfully, but returned 0 matching records.")
                     else:
                         st.dataframe(df, width="stretch", hide_index=True)
+                        csv_data = convert_df_to_csv(df)
+                        st.download_button(
+                            label="📥 Download Results as CSV",
+                            data=csv_data,
+                            file_name="nl2sql_query_results.csv",
+                            mime="text/csv",
+                            key=f"dl_hist_{idx}",
+                        )
 
                     # 3. Dynamic Visualization (Plotly)
                     chart_fig = content.get("chart")
@@ -119,6 +137,14 @@ if active_prompt:
                     st.info("Query executed successfully, but returned 0 matching records.")
                 else:
                     st.dataframe(df, width="stretch", hide_index=True)
+                    csv_data = convert_df_to_csv(df)
+                    st.download_button(
+                        label="📥 Download Results as CSV",
+                        data=csv_data,
+                        file_name="nl2sql_query_results.csv",
+                        mime="text/csv",
+                        key="dl_active",
+                    )
 
                 # Step D: Dynamic Chart
                 chart_fig = generate_auto_chart(df)
