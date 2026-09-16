@@ -20,8 +20,8 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # Default model configuration
-DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-FALLBACK_MODELS = ["gemini-2.0-flash", "gemini-1.5-flash"]
+DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+FALLBACK_MODELS = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"]
 PLACEHOLDER_KEYS = {
     "",
     "your_gemini_api_key_here",
@@ -183,6 +183,15 @@ class GeminiClient:
                         "Gemini API rate limit or quota exceeded. Please wait a moment before trying again."
                     ) from exc
 
+                # Check for model not available / 404 (e.g. retired model name)
+                if status_code == 404 and ("not available" in err_msg or "not found" in err_msg):
+                    for fb in FALLBACK_MODELS:
+                        if fb != self.model_name:
+                            self.model_name = fb
+                            break
+                    attempt += 1
+                    continue
+
                 raise GeminiAPIError(f"Gemini client error (HTTP {status_code}): {exc}") from exc
 
             except errors.ServerError as exc:
@@ -230,7 +239,7 @@ class GeminiClient:
         response_text = self.generate_text(
             prompt="Health check. Reply with the exact word: OK",
             temperature=0.0,
-            max_output_tokens=10,
+            max_output_tokens=50,
             retries=2,
         )
         return {
