@@ -17,6 +17,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from functools import wraps
+import firebase_admin
+from firebase_admin import auth, credentials
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import pandas as pd
@@ -28,9 +31,76 @@ from sql.executor import execute_safe_query
 
 logger = logging.getLogger(__name__)
 
+FIREBASE_CREDENTIALS_PATH = PROJECT_ROOT / "firebase_credentials.json"
+
+
+def init_firebase_admin() -> None:
+    """Initialize Firebase Admin SDK using credentials file or environment defaults."""
+    if not firebase_admin._apps:
+        if FIREBASE_CREDENTIALS_PATH.exists():
+            cred = credentials.Certificate(str(FIREBASE_CREDENTIALS_PATH))
+            firebase_admin.initialize_app(cred)
+            logger.info("Firebase Admin initialized with credentials from %s", FIREBASE_CREDENTIALS_PATH)
+        else:
+            try:
+                firebase_admin.initialize_app()
+                logger.info("Firebase Admin initialized with default credentials.")
+            except Exception as exc:
+                logger.warning(
+                    "Firebase Admin default init skipped (service credentials not found at %s): %s",
+                    FIREBASE_CREDENTIALS_PATH,
+                    exc,
+                )
+
+
+def token_required(f):
+    """Decorator to require and verify a valid Firebase Authentication Bearer JWT token."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return jsonify({
+                "status": "error",
+                "error": "Unauthorized: Missing Authorization header.",
+            }), 401
+
+        parts = auth_header.strip().split(" ")
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            return jsonify({
+                "status": "error",
+                "error": "Unauthorized: Invalid Authorization header format. Expected 'Bearer <token>'.",
+            }), 401
+
+        id_token = parts[1].strip()
+        if not id_token:
+            return jsonify({
+                "status": "error",
+                "error": "Unauthorized: Bearer token is empty.",
+            }), 401
+
+        try:
+            # Verify the Firebase ID token
+            decoded_token = auth.verify_id_token(id_token)
+            uid = decoded_token.get("uid", "unknown")
+            logger.info("[Tenant Tracking] Authenticated request from UID: %s (Email: %s)", uid, decoded_token.get("email"))
+            request.user_id = uid
+            request.decoded_token = decoded_token
+        except Exception as exc:
+            logger.warning("Firebase token verification rejected: %s", exc)
+            return jsonify({
+                "status": "error",
+                "error": f"Unauthorized: {str(exc)}",
+            }), 401
+
+        return f(*args, **kwargs)
+    return decorated
+
 
 def create_app() -> Flask:
     """Create and configure the Flask application with CORS support."""
+    # Ensure Firebase Admin SDK is initialized
+    init_firebase_admin()
+
     app = Flask(__name__)
     CORS(app)
 
@@ -44,6 +114,7 @@ def create_app() -> Flask:
         }), 200
 
     @app.route("/api/test-connection", methods=["POST"])
+    @token_required
     def test_connection():
         """Test database connection via SQLAlchemy by executing 'SELECT 1;'.
 
@@ -88,6 +159,7 @@ def create_app() -> Flask:
             }), 400
 
     @app.route("/api/query", methods=["POST"])
+    @token_required
     def process_query():
         """Process natural language query through the LangGraph multi-agent workflow.
 
@@ -134,6 +206,8 @@ def create_app() -> Flask:
 
         db_uri = payload.get("db_uri") or "sqlite:///college.db"
         user_query_str = str(user_query).strip()
+        tenant_uid = getattr(request, "user_id", "anonymous")
+        logger.info("[Tenant: %s] Processing query: %s on %s", tenant_uid, user_query_str, db_uri)
 
         try:
             # 1. Route prompt through LangGraph multi-agent workflow

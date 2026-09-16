@@ -1,6 +1,7 @@
 """Unit and integration tests for Flask REST API backend (api/server.py).
 
-Verifies /api/health, /api/query, CORS headers, error handling, and JSON response formats.
+Verifies /api/health, /api/query, /api/test-connection, Firebase JWT security,
+CORS headers, tenant tracking, and JSON error response formats.
 """
 
 import json
@@ -9,6 +10,8 @@ import pandas as pd
 import pytest
 
 from api.server import create_app
+
+MOCK_HEADERS = {"Authorization": "Bearer mock_firebase_jwt_token"}
 
 
 @pytest.fixture
@@ -20,8 +23,18 @@ def client():
         yield client
 
 
+@pytest.fixture
+def mock_firebase_auth():
+    """Mock Firebase Admin auth verification for authorized tests."""
+    with patch(
+        "firebase_admin.auth.verify_id_token",
+        return_value={"uid": "tenant_123", "email": "test@college.edu"},
+    ):
+        yield
+
+
 def test_health_endpoint(client):
-    """Verify /api/health returns 200 and status healthy."""
+    """Verify /api/health returns 200 and status healthy without auth."""
     response = client.get("/api/health")
     assert response.status_code == 200
     data = response.get_json()
@@ -35,26 +48,84 @@ def test_cors_headers_present(client):
     assert "Access-Control-Allow-Origin" in response.headers
 
 
-def test_query_endpoint_missing_json(client):
+# ----------------------------------------------------------------------
+# Security & Token Verification Tests
+# ----------------------------------------------------------------------
+
+def test_query_endpoint_missing_token(client):
+    """Verify 401 status when Authorization header is completely omitted."""
+    response = client.post("/api/query", json={"query": "hello"})
+    assert response.status_code == 401
+    data = response.get_json()
+    assert data["status"] == "error"
+    assert "Missing Authorization header" in data["error"]
+
+
+def test_query_endpoint_malformed_token_header(client):
+    """Verify 401 status when Authorization header is malformed."""
+    response = client.post(
+        "/api/query",
+        json={"query": "hello"},
+        headers={"Authorization": "TokenInvalid"},
+    )
+    assert response.status_code == 401
+    data = response.get_json()
+    assert data["status"] == "error"
+    assert "Invalid Authorization header format" in data["error"]
+
+
+def test_query_endpoint_invalid_token(client):
+    """Verify 401 status when token verification fails in Firebase."""
+    with patch("firebase_admin.auth.verify_id_token", side_effect=ValueError("Token expired or forged")):
+        response = client.post(
+            "/api/query",
+            json={"query": "hello"},
+            headers={"Authorization": "Bearer bad_token"},
+        )
+        assert response.status_code == 401
+        data = response.get_json()
+        assert data["status"] == "error"
+        assert "Token expired or forged" in data["error"]
+
+
+def test_test_connection_missing_token(client):
+    """Verify 401 status when Authorization header is missing on test-connection."""
+    response = client.post("/api/test-connection", json={"db_uri": "sqlite:///college.db"})
+    assert response.status_code == 401
+    data = response.get_json()
+    assert data["status"] == "error"
+    assert "Missing Authorization header" in data["error"]
+
+
+# ----------------------------------------------------------------------
+# Authenticated Functional Tests
+# ----------------------------------------------------------------------
+
+def test_query_endpoint_missing_json(client, mock_firebase_auth):
     """Verify 400 when request body is not JSON."""
-    response = client.post("/api/query", data="not json", content_type="text/plain")
+    response = client.post(
+        "/api/query",
+        data="not json",
+        content_type="text/plain",
+        headers=MOCK_HEADERS,
+    )
     assert response.status_code == 400
     data = response.get_json()
     assert "error" in data
 
 
-def test_query_endpoint_empty_query(client):
+def test_query_endpoint_empty_query(client, mock_firebase_auth):
     """Verify 400 when 'query' field is missing or empty."""
-    response = client.post("/api/query", json={})
+    response = client.post("/api/query", json={}, headers=MOCK_HEADERS)
     assert response.status_code == 400
 
-    response = client.post("/api/query", json={"query": "   "})
+    response = client.post("/api/query", json={"query": "   "}, headers=MOCK_HEADERS)
     assert response.status_code == 400
 
 
-def test_query_endpoint_conversational(client):
+def test_query_endpoint_conversational(client, mock_firebase_auth):
     """Verify conversational inputs return 200 with intent=conversational and data=None."""
-    response = client.post("/api/query", json={"query": "hello"})
+    response = client.post("/api/query", json={"query": "hello"}, headers=MOCK_HEADERS)
     assert response.status_code == 200
     data = response.get_json()
     assert data["intent"] == "conversational"
@@ -64,7 +135,7 @@ def test_query_endpoint_conversational(client):
     assert data["response"] is not None
 
 
-def test_query_endpoint_valid_query_mocked(client):
+def test_query_endpoint_valid_query_mocked(client, mock_firebase_auth):
     """Verify valid SQL queries execute and return tabular rows as a list of dicts."""
     mock_state = {
         "question": "Show top students",
@@ -85,6 +156,7 @@ def test_query_endpoint_valid_query_mocked(client):
                 response = client.post(
                     "/api/query",
                     json={"query": "Show top students", "db_uri": "sqlite:///college.db"},
+                    headers=MOCK_HEADERS,
                 )
                 assert response.status_code == 200
                 data = response.get_json()
@@ -96,7 +168,7 @@ def test_query_endpoint_valid_query_mocked(client):
                 assert "Retrieves the first two students." in data["response"]
 
 
-def test_query_endpoint_invalid_sql(client):
+def test_query_endpoint_invalid_sql(client, mock_firebase_auth):
     """Verify 400 status when query validation fails."""
     mock_state = {
         "question": "Show bad query",
@@ -108,7 +180,11 @@ def test_query_endpoint_invalid_sql(client):
     }
 
     with patch("api.server.run_agent", return_value=mock_state):
-        response = client.post("/api/query", json={"query": "Show bad query"})
+        response = client.post(
+            "/api/query",
+            json={"query": "Show bad query"},
+            headers=MOCK_HEADERS,
+        )
         assert response.status_code == 400
         data = response.get_json()
         assert data["intent"] == "query"
@@ -116,7 +192,7 @@ def test_query_endpoint_invalid_sql(client):
         assert "Table does not exist" in data["response"]
 
 
-def test_query_endpoint_execution_failure(client):
+def test_query_endpoint_execution_failure(client, mock_firebase_auth):
     """Verify 400 status when database execution fails."""
     mock_state = {
         "question": "Show data",
@@ -129,49 +205,66 @@ def test_query_endpoint_execution_failure(client):
 
     with patch("api.server.run_agent", return_value=mock_state):
         with patch("api.server.execute_safe_query", return_value=(False, None, "Database locked")):
-            response = client.post("/api/query", json={"query": "Show data"})
+            response = client.post(
+                "/api/query",
+                json={"query": "Show data"},
+                headers=MOCK_HEADERS,
+            )
             assert response.status_code == 400
             data = response.get_json()
             assert data["is_valid"] is False
             assert "Database execution error" in data["response"]
 
 
-def test_query_endpoint_internal_server_error(client):
+def test_query_endpoint_internal_server_error(client, mock_firebase_auth):
     """Verify 500 status when an unhandled exception occurs."""
     with patch("api.server.run_agent", side_effect=RuntimeError("Fatal agent crash")):
-        response = client.post("/api/query", json={"query": "trigger crash"})
+        response = client.post(
+            "/api/query",
+            json={"query": "trigger crash"},
+            headers=MOCK_HEADERS,
+        )
         assert response.status_code == 500
         data = response.get_json()
         assert "Internal Server Error" in data["error"]
 
 
-def test_test_connection_success(client):
+def test_test_connection_success(client, mock_firebase_auth):
     """Verify /api/test-connection returns 200 for valid local SQLite DB."""
-    response = client.post("/api/test-connection", json={"db_uri": "sqlite:///college.db"})
+    response = client.post(
+        "/api/test-connection",
+        json={"db_uri": "sqlite:///college.db"},
+        headers=MOCK_HEADERS,
+    )
     assert response.status_code == 200
     data = response.get_json()
     assert data["status"] == "success"
     assert "verified" in data["message"].lower()
 
 
-def test_test_connection_missing_payload(client):
+def test_test_connection_missing_payload(client, mock_firebase_auth):
     """Verify 400 status when db_uri is missing or invalid in /api/test-connection."""
-    response = client.post("/api/test-connection", json={})
+    response = client.post("/api/test-connection", json={}, headers=MOCK_HEADERS)
     assert response.status_code == 400
     assert response.get_json()["status"] == "error"
 
-    response = client.post("/api/test-connection", data="not json", content_type="text/plain")
+    response = client.post(
+        "/api/test-connection",
+        data="not json",
+        content_type="text/plain",
+        headers=MOCK_HEADERS,
+    )
     assert response.status_code == 400
 
 
-def test_test_connection_invalid_uri(client):
+def test_test_connection_invalid_uri(client, mock_firebase_auth):
     """Verify 400 status when db_uri fails connection."""
     response = client.post(
         "/api/test-connection",
         json={"db_uri": "postgresql://invalid_user:pass@127.0.0.1:9999/nonexistent"},
+        headers=MOCK_HEADERS,
     )
     assert response.status_code == 400
     data = response.get_json()
     assert data["status"] == "error"
     assert "error" in data
-

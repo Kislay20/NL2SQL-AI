@@ -29,6 +29,9 @@ psycopg2-binary>=2.9.0
 # Configuration Management
 python-dotenv>=1.0.0
 
+# Authentication & Multi-Tenancy (Firebase)
+firebase-admin>=6.5.0
+
 # Speech & Voice Recognition
 streamlit-mic-recorder>=0.0.8
 SpeechRecognition>=3.14.0
