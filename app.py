@@ -11,6 +11,7 @@ import streamlit as st
 
 from streamlit_mic_recorder import speech_to_text
 
+from ai.agent import run_agent
 from ai.explainer import explain_sql
 from ai.sql_generator import generate_sql
 from database.database import validate_database_connection
@@ -109,15 +110,18 @@ for idx, msg in enumerate(st.session_state.messages):
         if role == "user":
             st.markdown(content["text"])
         elif role == "assistant":
-            if content.get("error"):
+            if content.get("text"):
+                st.markdown(content["text"])
+            elif content.get("error"):
                 st.error(f"❌ **Error:** {content['error']}")
                 if content.get("sql"):
                     with st.expander("🔍 View Attempted SQL"):
                         st.code(content["sql"], language="sql")
             else:
                 # 1. Generated SQL Query
-                st.markdown("##### ⚡ Generated SQL Query")
-                st.code(content["sql"], language="sql")
+                if content.get("sql"):
+                    st.markdown("##### ⚡ Generated SQL Query")
+                    st.code(content["sql"], language="sql")
 
                 # 2. Database Execution Results
                 df = content.get("dataframe")
@@ -170,62 +174,81 @@ if active_prompt:
     with st.chat_message("assistant"):
         sql_query: str = ""
         try:
-            # Step A: Natural Language -> SQL Generation
-            with st.spinner("🤖 Gemini is generating SQLite query..."):
-                sql_query = generate_sql(active_prompt)
+            # Step A: Multi-Agent Orchestration via LangGraph (Router -> Coder -> Validator)
+            with st.spinner("🤖 Multi-agent LangGraph orchestrating..."):
+                agent_state = run_agent(question=active_prompt, db_uri=db_uri)
 
-            st.markdown("##### ⚡ Generated SQL Query")
-            st.code(sql_query, language="sql")
-
-            # Step B: SQL Safety Gate & SQLite Execution
-            with st.spinner("🛡️ Validating safety guardrails and executing query..."):
-                success, df, err_msg = execute_safe_query(sql_query, db_uri=db_uri)
-
-            if not success:
-                st.error(f"❌ **Execution Blocked / Failed:** {err_msg}")
-                add_message(
-                    "assistant",
-                    {"sql": sql_query, "error": err_msg, "dataframe": None, "explanation": None},
+            # Check if router classified as conversational chit-chat
+            if agent_state.get("intent") == "conversational":
+                conversational_text = agent_state.get(
+                    "response", "Hello! How can I assist you with the college database?"
                 )
+                st.markdown(conversational_text)
+                add_message("assistant", {"text": conversational_text})
             else:
-                # Step C: Display Results
-                st.markdown(f"##### 📋 Query Results ({len(df)} rows)")
-                if df.empty:
-                    st.info("Query executed successfully, but returned 0 matching records.")
-                else:
-                    st.dataframe(df, width="stretch", hide_index=True)
-                    csv_data = convert_df_to_csv(df)
-                    st.download_button(
-                        label="📥 Download Results as CSV",
-                        data=csv_data,
-                        file_name="nl2sql_query_results.csv",
-                        mime="text/csv",
-                        key="dl_active",
+                sql_query = agent_state.get("sql", "")
+                if sql_query:
+                    st.markdown("##### ⚡ Generated SQL Query")
+                    st.code(sql_query, language="sql")
+
+                # If validator flagged an issue after self-correction attempts
+                if not agent_state.get("is_valid", False):
+                    val_err = agent_state.get("error") or "SQL schema/syntax validation failed."
+                    st.error(f"❌ **Validation Blocked:** {val_err}")
+                    add_message(
+                        "assistant",
+                        {"sql": sql_query, "error": val_err, "dataframe": None, "explanation": None},
                     )
+                else:
+                    # Step B: Safe Query Execution
+                    with st.spinner("🛡️ Executing validated query..."):
+                        success, df, err_msg = execute_safe_query(sql_query, db_uri=db_uri)
 
-                # Step D: Dynamic Chart
-                chart = render_dynamic_chart(df)
-                if chart:
-                    st.plotly_chart(chart, use_container_width=True)
+                    if not success:
+                        st.error(f"❌ **Execution Blocked / Failed:** {err_msg}")
+                        add_message(
+                            "assistant",
+                            {"sql": sql_query, "error": err_msg, "dataframe": None, "explanation": None},
+                        )
+                    else:
+                        # Step C: Display Results
+                        st.markdown(f"##### 📋 Query Results ({len(df)} rows)")
+                        if df.empty:
+                            st.info("Query executed successfully, but returned 0 matching records.")
+                        else:
+                            st.dataframe(df, width="stretch", hide_index=True)
+                            csv_data = convert_df_to_csv(df)
+                            st.download_button(
+                                label="📥 Download Results as CSV",
+                                data=csv_data,
+                                file_name="nl2sql_query_results.csv",
+                                mime="text/csv",
+                                key="dl_active",
+                            )
 
-                # Step E: AI Explanation
-                with st.spinner("🧠 Generating natural language explanation..."):
-                    explanation = explain_sql(active_prompt, sql_query)
+                        # Step D: Dynamic Chart
+                        chart = render_dynamic_chart(df)
+                        if chart:
+                            st.plotly_chart(chart, use_container_width=True)
 
-                st.markdown("##### 💡 AI Explanation")
-                st.info(explanation)
+                        # Step E: AI Explanation
+                        with st.spinner("🧠 Generating natural language explanation..."):
+                            explanation = explain_sql(active_prompt, sql_query)
 
-                # Step F: Save Complete Interaction to Session State
-                add_message(
-                    "assistant",
-                    {
-                        "sql": sql_query,
-                        "dataframe": df,
-                        "chart": chart,
-                        "explanation": explanation,
-                        "error": None,
-                    },
-                )
+                        st.markdown("##### 💡 AI Explanation")
+                        st.info(explanation)
+
+                        # Step F: Save Complete Interaction to Session State
+                        add_message(
+                            "assistant",
+                            {
+                                "sql": sql_query,
+                                "dataframe": df,
+                                "chart": chart,
+                                "explanation": explanation,
+                                "error": None,
+                            },
+                        )
 
         except Exception as exc:
             st.error(f"❌ **Application Error:** {exc}")

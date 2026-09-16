@@ -200,6 +200,10 @@ class GeminiClient:
 
                 # Transient 503 High Demand Spikes
                 if status_code == 503 or "high demand" in err_msg or "unavailable" in err_msg:
+                    for fb in FALLBACK_MODELS:
+                        if fb != self.model_name:
+                            self.model_name = fb
+                            break
                     if attempt < retries:
                         attempt += 1
                         time.sleep(backoff_factor * attempt)
