@@ -16,14 +16,16 @@ from sql.safety import is_safe_query
 
 
 def validate_sql_syntax(
-    db_path: Optional[str | Path],
-    sql_query: str,
+    db_path: Optional[str | Path] = None,
+    sql_query: str = "",
+    db_uri: Optional[str] = None,
 ) -> Tuple[bool, str]:
     """Validate query syntax and schema references using SQLite EXPLAIN QUERY PLAN.
 
     Args:
         db_path: Path to the SQLite database file (or None for default).
         sql_query: The SQL query to validate.
+        db_uri: Optional database URI string.
 
     Returns:
         Tuple of (is_valid: bool, error_message: str). If valid, error_message is empty.
@@ -31,7 +33,8 @@ def validate_sql_syntax(
     if not sql_query or not sql_query.strip():
         return False, "Query is empty."
 
-    resolved_path = get_db_path(db_path)
+    target = db_uri if db_uri else db_path
+    resolved_path = get_db_path(target)
     if not resolved_path.exists():
         return False, f"Database file not found at: {resolved_path}"
 
@@ -53,12 +56,14 @@ def validate_sql_syntax(
 def validate_query(
     sql_query: str,
     db_path: Optional[str | Path] = None,
+    db_uri: Optional[str] = None,
 ) -> Tuple[bool, str]:
     """Execute the full two-step validation pipeline: Safety Gate -> Schema Validator.
 
     Args:
         sql_query: The SQL query to check.
         db_path: Optional path to the SQLite database.
+        db_uri: Optional database URI string.
 
     Returns:
         Tuple of (is_valid: bool, error_message: str).
@@ -69,7 +74,7 @@ def validate_query(
         return False, safety_err
 
     # Step 2: Schema & Syntax Validation (EXPLAIN QUERY PLAN)
-    is_valid_syntax, syntax_err = validate_sql_syntax(db_path, sql_query)
+    is_valid_syntax, syntax_err = validate_sql_syntax(db_path=db_path, sql_query=sql_query, db_uri=db_uri)
     if not is_valid_syntax:
         return False, syntax_err
 

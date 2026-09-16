@@ -30,7 +30,10 @@ SAMPLE_QUESTIONS = [
 ]
 
 
-def render_sidebar(db_path: Optional[str | Path] = None) -> Optional[str]:
+def render_sidebar(
+    db_path: Optional[str | Path] = None,
+    db_uri: Optional[str] = None,
+) -> Optional[str]:
     """Render the sidebar with project metadata, schema explorer, and sample queries.
 
     Returns:
@@ -47,9 +50,10 @@ def render_sidebar(db_path: Optional[str | Path] = None) -> Optional[str]:
         st.subheader("⚙️ System Status")
         col1, col2 = st.columns(2)
         with col1:
-            st.metric(label="Engine", value="SQLite 3")
+            engine_name = "SQLite 3" if not db_uri or "sqlite" in db_uri.lower() else "SQLAlchemy"
+            st.metric(label="Engine", value=engine_name)
         with col2:
-            model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+            model_name = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
             st.metric(label="LLM", value=model_name.split("-")[1].upper())
 
         st.markdown("---")
@@ -57,13 +61,13 @@ def render_sidebar(db_path: Optional[str | Path] = None) -> Optional[str]:
         # 2. Database Schema Explorer
         st.subheader("📁 Database Schema")
         try:
-            tables = get_table_names(db_path)
-            counts = get_table_counts(db_path)
+            tables = get_table_names(db_path=db_path, db_uri=db_uri)
+            counts = get_table_counts(db_path=db_path, db_uri=db_uri)
 
             for tbl in tables:
                 row_count = counts.get(tbl, 0)
                 with st.expander(f"**{tbl.upper()}** ({row_count} rows)"):
-                    cols = get_table_info(tbl, db_path)
+                    cols = get_table_info(tbl, db_path=db_path, db_uri=db_uri)
                     col_data = []
                     for c in cols:
                         col_data.append({
@@ -75,7 +79,7 @@ def render_sidebar(db_path: Optional[str | Path] = None) -> Optional[str]:
 
                     # Preview sample data
                     if st.checkbox(f"Preview {tbl}", key=f"prev_{tbl}"):
-                        sample_df = get_sample_data(tbl, limit=3, db_path=db_path)
+                        sample_df = get_sample_data(tbl, limit=3, db_path=db_path, db_uri=db_uri)
                         st.dataframe(sample_df, hide_index=True, width="stretch")
 
         except Exception as exc:

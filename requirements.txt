@@ -13,8 +13,9 @@ google-generativeai>=0.8.0
 pandas>=2.2.0
 plotly>=5.20.0
 
-# SQL Parsing & Safety
+# SQL Parsing, Engine & Safety
 sqlparse>=0.5.0
+SQLAlchemy>=2.0.0
 
 # Configuration Management
 python-dotenv>=1.0.0

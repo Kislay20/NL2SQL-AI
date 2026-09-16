@@ -18,12 +18,14 @@ from sql.validator import validate_query
 def execute_query(
     sql_query: str,
     db_path: Optional[str | Path] = None,
+    db_uri: Optional[str] = None,
 ) -> Tuple[bool, Optional[pd.DataFrame], str]:
     """Execute a SQL query against the SQLite database and extract results as a DataFrame.
 
     Args:
         sql_query: SQL query string to execute.
         db_path: Optional path to the SQLite database file.
+        db_uri: Optional database connection URI.
 
     Returns:
         Tuple of (success: bool, dataframe: Optional[pd.DataFrame], error_message: str).
@@ -33,38 +35,39 @@ def execute_query(
     if not sql_query or not sql_query.strip():
         return False, None, "Query is empty or whitespace."
 
-    resolved_path = get_db_path(db_path)
-    if not resolved_path.exists():
-        return False, None, f"Database file not found at: {resolved_path}"
+    target = db_uri if db_uri else db_path
+    if target and not str(target).startswith("sqlite:///"):
+        resolved_path = get_db_path(target)
+        if not resolved_path.exists():
+            return False, None, f"Database file not found at: {resolved_path}"
 
     try:
-        # Open managed SQLite connection (with foreign keys and proper context manager)
-        with get_connection(resolved_path) as conn:
-            # pd.read_sql_query directly constructs a DataFrame from the cursor
-            df = pd.read_sql_query(sql_query, conn)
-            return True, df, ""
-
+        from database.database import execute_query as db_exec_query
+        df = db_exec_query(sql_query, db_path=db_path, db_uri=db_uri)
+        return True, df, ""
     except (sqlite3.Error, pd.errors.DatabaseError) as exc:
         return False, None, f"Database query execution error: {exc}"
     except Exception as exc:
-        return False, None, f"Unexpected error during query execution: {exc}"
+        return False, None, f"Database query execution error: {exc}"
 
 
 def execute_safe_query(
     sql_query: str,
     db_path: Optional[str | Path] = None,
+    db_uri: Optional[str] = None,
 ) -> Tuple[bool, Optional[pd.DataFrame], str]:
     """Validate safety and syntax before executing the query.
 
     Args:
         sql_query: SQL query string to evaluate and execute.
         db_path: Optional path to the SQLite database.
+        db_uri: Optional database connection URI.
 
     Returns:
         Tuple of (success: bool, dataframe: Optional[pd.DataFrame], error_message: str).
     """
-    is_valid, validation_err = validate_query(sql_query, db_path)
+    is_valid, validation_err = validate_query(sql_query, db_path=db_path, db_uri=db_uri)
     if not is_valid:
         return False, None, f"Validation failed: {validation_err}"
 
-    return execute_query(sql_query, db_path)
+    return execute_query(sql_query, db_path=db_path, db_uri=db_uri)

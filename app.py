@@ -39,8 +39,12 @@ st.set_page_config(
 # Initialize Session State
 init_history()
 
+# Database Connection Configuration
+with st.sidebar.expander("⚙️ Database Connection", expanded=False):
+    db_uri = st.sidebar.text_input("Database URI", value="sqlite:///college.db")
+
 # Render Sidebar (Schema explorer, system status, and sample buttons)
-clicked_sample = render_sidebar()
+clicked_sample = render_sidebar(db_uri=db_uri)
 
 # Main Header Banner
 st.title("🎓 NL2SQL AI")
@@ -122,7 +126,7 @@ if active_prompt:
 
             # Step B: SQL Safety Gate & SQLite Execution
             with st.spinner("🛡️ Validating safety guardrails and executing query..."):
-                success, df, err_msg = execute_safe_query(sql_query)
+                success, df, err_msg = execute_safe_query(sql_query, db_uri=db_uri)
 
             if not success:
                 st.error(f"❌ **Execution Blocked / Failed:** {err_msg}")
