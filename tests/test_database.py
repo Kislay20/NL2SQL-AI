@@ -15,6 +15,7 @@ from database.database import (
     get_schema_ddl,
     execute_query,
     get_sample_data,
+    validate_database_connection,
 )
 
 
@@ -185,3 +186,22 @@ def test_query_compound_condition():
     assert (df["marks"] > 80.0).all()
     assert (df["attendance_percentage"] > 85.0).all()
     assert "Priya Patel" in df["name"].values
+
+
+def test_database_connection_validator():
+    """Verify validate_database_connection correctly validates real and faulty URIs."""
+    # Real database should pass
+    success, err = validate_database_connection("sqlite:///college.db")
+    assert success is True
+    assert err == ""
+
+    # Blank URI should fail
+    empty_success, empty_err = validate_database_connection("")
+    assert empty_success is False
+    assert "empty" in empty_err.lower()
+
+    # Faulty URI / missing driver should fail
+    bad_success, bad_err = validate_database_connection("postgresql://user:pass@localhost:5432/ghostdb")
+    assert bad_success is False
+    assert len(bad_err) > 0
+

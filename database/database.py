@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import sqlite3
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, inspect, text
@@ -341,3 +341,27 @@ def get_sample_data(
 
     query = f"SELECT * FROM {table_name} LIMIT {int(limit)};"
     return execute_query(query, db_path=db_path, db_uri=db_uri)
+
+
+def validate_database_connection(db_uri: str) -> Tuple[bool, str]:
+    """Validate that a database connection can be established.
+
+    Args:
+        db_uri: Database connection URI to test.
+
+    Returns:
+        Tuple of (success: bool, error_message: str).
+    """
+    if not db_uri or not str(db_uri).strip():
+        return False, "Database URI cannot be empty."
+
+    try:
+        engine = get_engine(db_uri=db_uri)
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1;"))
+        # Verify schema inspection works as well
+        get_table_names(db_uri=db_uri)
+        return True, ""
+    except Exception as exc:
+        return False, str(exc)
+

@@ -11,6 +11,7 @@ import streamlit as st
 
 from ai.explainer import explain_sql
 from ai.sql_generator import generate_sql
+from database.database import validate_database_connection
 from sql.executor import execute_safe_query
 from ui.charts import generate_auto_chart
 from ui.components import render_sidebar
@@ -36,6 +37,18 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Clean up built-in Streamlit input hints for professional presentation
+st.markdown(
+    """
+    <style>
+    [data-testid="InputInstructions"] {
+        display: none !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Initialize Session State
 init_history()
 
@@ -45,11 +58,19 @@ if "db_uri" not in st.session_state:
 
 with st.sidebar.expander("⚙️ Database Connection", expanded=False):
     with st.form("db_config_form"):
-        input_uri = st.text_input("Database URI", value=st.session_state.db_uri)
+        input_uri = st.text_input(
+            "Database URI",
+            value=st.session_state.db_uri,
+            help="Type your database connection string (e.g. sqlite:///college.db or postgresql://user:pass@host/db)",
+        )
         connect_btn = st.form_submit_button("🔌 Connect Database", use_container_width=True)
         if connect_btn:
-            st.session_state.db_uri = input_uri
-            st.success("Database connected!")
+            is_valid, err_msg = validate_database_connection(input_uri)
+            if is_valid:
+                st.session_state.db_uri = input_uri
+                st.success("✅ Database connected successfully!")
+            else:
+                st.error(f"❌ Connection failed: {err_msg}")
 
 db_uri = st.session_state.db_uri
 
