@@ -76,6 +76,18 @@ with st.sidebar.expander("⚙️ Database Connection", expanded=False):
 
 db_uri = st.session_state.db_uri
 
+# Voice Query Microphone Input in Sidebar
+with st.sidebar:
+    st.subheader("🎙️ Voice Query")
+    voice_query = speech_to_text(
+        start_prompt="🎙️ Speak your query",
+        stop_prompt="⏹️ Stop recording",
+        just_once=True,
+        key="voice_query",
+        use_container_width=True,
+    )
+    st.markdown("---")
+
 # Render Sidebar (Schema explorer, system status, and sample buttons)
 clicked_sample = render_sidebar(db_uri=db_uri)
 
@@ -136,14 +148,7 @@ for idx, msg in enumerate(st.session_state.messages):
                     st.info(explanation)
 
 
-# Microphone Voice Query Widget (Anchored cleanly at the bottom, directly above chat input)
-voice_query = speech_to_text(
-    start_prompt="🎙️ Speak your query",
-    stop_prompt="⏹️ Stop recording",
-    just_once=True,
-    key="voice_query",
-)
-
+# Capture Typed Chat Input
 user_query = st.chat_input("Ask a question about the college database (e.g. 'Show students scoring > 80')...")
 
 # Resolve active prompt (Sample click > Voice transcription > Typed input)
