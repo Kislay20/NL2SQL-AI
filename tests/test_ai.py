@@ -1,7 +1,7 @@
-"""Tests for Gemini client, configuration, and error handling.
+"""Tests for Gemini client, configuration, prompts, parser, and SQL generation.
 
-Includes unit tests with mocks for error conditions and live integration tests
-when a valid GEMINI_API_KEY is configured in the environment.
+Includes unit tests with mocks for error conditions, parser tests,
+prompt structure tests, and live integration tests when GEMINI_API_KEY is active.
 """
 
 import os
@@ -21,11 +21,14 @@ from ai.gemini import (
     get_gemini_client,
     verify_gemini_connection,
 )
+from ai.parser import extract_sql
+from ai.prompts import build_sql_prompt, SQL_GENERATION_SYSTEM_INSTRUCTION
+from ai.sql_generator import generate_sql
 from google.genai import errors
 
 
 # ----------------------------------------------------------------------
-# Unit Tests (Mocked - No live API calls)
+# Unit Tests: Gemini Client (Mocked)
 # ----------------------------------------------------------------------
 
 def test_missing_api_key_raises_error():
@@ -123,7 +126,94 @@ def test_get_gemini_client_singleton():
 
 
 # ----------------------------------------------------------------------
-# Live Integration Test (Executes if valid key exists in environment)
+# Unit Tests: Parser (ai/parser.py)
+# ----------------------------------------------------------------------
+
+def test_extract_sql_markdown_fences():
+    """Verify markdown code fences with 'sql' tag are stripped cleanly."""
+    raw = "```sql\nSELECT * FROM students WHERE year = 2;\n```"
+    assert extract_sql(raw) == "SELECT * FROM students WHERE year = 2;"
+
+
+def test_extract_sql_plain_fences():
+    """Verify markdown code fences without language tag are stripped."""
+    raw = "```\nSELECT name, email FROM students;\n```"
+    assert extract_sql(raw) == "SELECT name, email FROM students;"
+
+
+def test_extract_sql_preamble_removal():
+    """Verify conversational preambles are removed."""
+    raw = "Here is the SQL query:\n```sql\nSELECT * FROM subjects;\n```"
+    assert extract_sql(raw) == "SELECT * FROM subjects;"
+
+    raw2 = "SQL: SELECT * FROM marks;"
+    assert extract_sql(raw2) == "SELECT * FROM marks;"
+
+
+def test_extract_sql_backticks_and_quotes():
+    """Verify backticks and extraneous surrounding quotes are removed."""
+    raw = "`SELECT department FROM students;`"
+    assert extract_sql(raw) == "SELECT department FROM students;"
+
+    raw2 = '"SELECT * FROM attendance;"'
+    assert extract_sql(raw2) == "SELECT * FROM attendance;"
+
+
+def test_extract_sql_semicolon_normalization():
+    """Verify trailing semicolon is added if missing."""
+    raw = "SELECT * FROM students"
+    assert extract_sql(raw) == "SELECT * FROM students;"
+
+
+def test_extract_sql_empty():
+    """Verify blank inputs return empty strings safely."""
+    assert extract_sql("") == ""
+    assert extract_sql("   ") == ""
+
+
+# ----------------------------------------------------------------------
+# Unit Tests: Prompts (ai/prompts.py)
+# ----------------------------------------------------------------------
+
+def test_build_sql_prompt_structure():
+    """Verify prompt formatting contains user question, schema, and examples."""
+    schema = "Table: students\n  - student_id\n  - name"
+    prompt = build_sql_prompt("Show all students", schema)
+
+    assert "Table: students" in prompt
+    assert 'User Question: "Show all students"' in prompt
+    assert "Few-Shot Examples:" in prompt
+    assert "SQL:" in prompt
+
+
+def test_sql_system_instruction_rules():
+    """Verify system instructions enforce read-only and no hallucinations."""
+    assert "read-only" in SQL_GENERATION_SYSTEM_INSTRUCTION.lower()
+    assert "no insert, update, delete, drop" in SQL_GENERATION_SYSTEM_INSTRUCTION.lower()
+
+
+# ----------------------------------------------------------------------
+# Unit Tests: SQL Generator (Mocked)
+# ----------------------------------------------------------------------
+
+def test_generate_sql_empty_question_raises():
+    """Verify empty question raises ValueError."""
+    with pytest.raises(ValueError):
+        generate_sql("")
+
+
+def test_generate_sql_mocked():
+    """Verify generate_sql coordinates prompt construction and extraction."""
+    mock_client = MagicMock()
+    mock_client.generate_text.return_value = "```sql\nSELECT * FROM students;\n```"
+
+    sql = generate_sql("Show all students", client=mock_client)
+    assert sql == "SELECT * FROM students;"
+    mock_client.generate_text.assert_called_once()
+
+
+# ----------------------------------------------------------------------
+# Live Integration Tests (Executes if valid key exists in environment)
 # ----------------------------------------------------------------------
 
 def test_live_gemini_connection():
@@ -137,3 +227,28 @@ def test_live_gemini_connection():
     assert "model" in result
     assert "response" in result
     assert len(result["response"]) > 0
+
+
+def test_live_generate_sql_simple():
+    """Test live SQL generation for a basic query."""
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not key or key.startswith("your_gemini"):
+        pytest.skip("Skipping live API test: no valid GEMINI_API_KEY configured in .env")
+
+    sql = generate_sql("Show all students in Computer Science")
+    assert sql.upper().startswith("SELECT")
+    assert "students" in sql.lower()
+    assert "computer science" in sql.lower()
+
+
+def test_live_generate_sql_complex():
+    """Test live SQL generation for group by and join query."""
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not key or key.startswith("your_gemini"):
+        pytest.skip("Skipping live API test: no valid GEMINI_API_KEY configured in .env")
+
+    sql = generate_sql("Which department has the highest average marks?")
+    assert sql.upper().startswith("SELECT")
+    assert "department" in sql.lower()
+    assert "avg" in sql.lower() or "average" in sql.lower()
+    assert "marks" in sql.lower()
