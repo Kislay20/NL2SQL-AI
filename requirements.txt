@@ -1,0 +1,23 @@
+# =====================================================================
+# NL2SQL AI - Project Dependencies
+# =====================================================================
+
+# Web Application Framework
+streamlit>=1.35.0
+
+# Generative AI (Google Gemini)
+google-genai>=1.0.0
+google-generativeai>=0.8.0
+
+# Data Analysis & Charting
+pandas>=2.2.0
+plotly>=5.20.0
+
+# SQL Parsing & Safety
+sqlparse>=0.5.0
+
+# Configuration Management
+python-dotenv>=1.0.0
+
+# Unit Testing & QA
+pytest>=8.0.0
