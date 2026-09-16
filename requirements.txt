@@ -2,8 +2,10 @@
 # NL2SQL AI - Project Dependencies
 # =====================================================================
 
-# Web Application Framework
+# Web Application & REST API Frameworks
 streamlit>=1.35.0
+flask>=3.0.0
+flask-cors>=4.0.0
 
 # Generative AI (Google Gemini)
 google-genai>=1.0.0
