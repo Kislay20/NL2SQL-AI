@@ -40,8 +40,18 @@ st.set_page_config(
 init_history()
 
 # Database Connection Configuration
+if "db_uri" not in st.session_state:
+    st.session_state.db_uri = "sqlite:///college.db"
+
 with st.sidebar.expander("⚙️ Database Connection", expanded=False):
-    db_uri = st.text_input("Database URI", value="sqlite:///college.db")
+    with st.form("db_config_form"):
+        input_uri = st.text_input("Database URI", value=st.session_state.db_uri)
+        connect_btn = st.form_submit_button("🔌 Connect Database", use_container_width=True)
+        if connect_btn:
+            st.session_state.db_uri = input_uri
+            st.success("Database connected!")
+
+db_uri = st.session_state.db_uri
 
 # Render Sidebar (Schema explorer, system status, and sample buttons)
 clicked_sample = render_sidebar(db_uri=db_uri)
