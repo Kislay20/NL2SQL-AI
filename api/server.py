@@ -213,6 +213,18 @@ def create_app() -> Flask:
         logger.info("[Tenant: %s] Processing query: %s on %s", tenant_uid, user_query_str, db_uri)
 
         try:
+            # 0. Prompt-level security guard for destructive intent
+            forbidden_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'TRUNCATE']
+            if any(keyword in user_query_str.upper() for keyword in forbidden_keywords):
+                logger.warning("[Tenant: %s] Security Alert: Destructive query text blocked: %s", tenant_uid, user_query_str)
+                return jsonify({
+                    "is_valid": False,
+                    "error": "Security Alert: Destructive data modification queries are blocked!",
+                    "response": "Security Alert: Destructive data modification queries are blocked!",
+                    "intent": "query",
+                    "sql": None,
+                    "data": [],
+                }, 403)
             # 1. Route prompt through LangGraph multi-agent workflow
             agent_state = run_agent(question=user_query_str, db_uri=db_uri)
 
@@ -236,6 +248,21 @@ def create_app() -> Flask:
             sql = agent_state.get("sql")
             is_valid = agent_state.get("is_valid", False)
 
+            # Strict Read-Only security filter
+            forbidden_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'TRUNCATE']
+            if sql:
+                sql_upper = sql.upper()
+                if any(keyword in sql_upper for keyword in forbidden_keywords):
+                    logger.warning("[Tenant: %s] Security Alert: Forbidden SQL keyword detected: %s", tenant_uid, sql)
+                    return jsonify({
+                        "is_valid": False,
+                        "error": "Security Alert: Only SELECT (read-only) queries are allowed!",
+                        "response": "Security Alert: Only SELECT (read-only) queries are allowed!",
+                        "intent": "query",
+                        "sql": sql,
+                        "data": [],
+                    }), 403
+
             if not is_valid:
                 val_error = agent_state.get("error") or "SQL validation failed."
                 return jsonify({
@@ -246,6 +273,19 @@ def create_app() -> Flask:
                     "data": None,
                     "error": val_error,
                 }), 400
+
+            # Strict Read-Only security filter right before SQL execution
+            sql_upper = (sql or "").upper()
+            if any(keyword in sql_upper for keyword in forbidden_keywords):
+                logger.warning("[Tenant: %s] Security Alert: Forbidden SQL keyword detected right before execution: %s", tenant_uid, sql)
+                return jsonify({
+                    "is_valid": False,
+                    "error": "Security Alert: Only SELECT (read-only) queries are allowed!",
+                    "response": "Security Alert: Only SELECT (read-only) queries are allowed!",
+                    "intent": "query",
+                    "sql": sql,
+                    "data": [],
+                }), 403
 
             # 4. Safe execution of validated query
             success, df, exec_error = execute_safe_query(sql_query=sql, db_uri=db_uri)

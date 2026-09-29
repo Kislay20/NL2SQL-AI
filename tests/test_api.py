@@ -268,3 +268,63 @@ def test_test_connection_invalid_uri(client, mock_firebase_auth):
     data = response.get_json()
     assert data["status"] == "error"
     assert "error" in data
+
+
+# ----------------------------------------------------------------------
+# Read-Only Security Filter (Forbidden Keywords) Tests
+# ----------------------------------------------------------------------
+
+@pytest.mark.parametrize("forbidden_kw", ["DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "TRUNCATE"])
+def test_query_endpoint_forbidden_keywords_blocked(client, mock_firebase_auth, forbidden_kw):
+    """Verify 403 Forbidden status when AI generates a query containing forbidden keywords."""
+    mock_state = {
+        "question": f"Perform {forbidden_kw} operation",
+        "intent": "query",
+        "sql": f"{forbidden_kw} TABLE students;",
+        "is_valid": False,
+        "error": f"Disallowed {forbidden_kw}",
+        "response": None,
+    }
+
+    with patch("api.server.run_agent", return_value=mock_state):
+        with patch("api.server.execute_safe_query") as mock_exec:
+            response = client.post(
+                "/api/query",
+                json={"query": f"Perform {forbidden_kw} operation"},
+                headers=MOCK_HEADERS,
+            )
+            assert response.status_code == 403
+            data = response.get_json()
+            assert data["is_valid"] is False
+            assert data["error"] == "Security Alert: Only SELECT (read-only) queries are allowed!"
+            assert data["response"] == "Security Alert: Only SELECT (read-only) queries are allowed!"
+            assert data["data"] == []
+            # Crucial: verify database execution was never called
+            mock_exec.assert_not_called()
+
+
+def test_query_endpoint_forbidden_keyword_validation_bypass_attempt(client, mock_firebase_auth):
+    """Verify that even if an agent erroneously reports is_valid=True, execution is blocked with 403."""
+    mock_state = {
+        "question": "Sneaky update",
+        "intent": "query",
+        "sql": "UPDATE students SET marks = 100 WHERE student_id = 1;",
+        "is_valid": True,  # simulated agent validation bypass
+        "error": None,
+        "response": None,
+    }
+
+    with patch("api.server.run_agent", return_value=mock_state):
+        with patch("api.server.execute_safe_query") as mock_exec:
+            response = client.post(
+                "/api/query",
+                json={"query": "Sneaky update"},
+                headers=MOCK_HEADERS,
+            )
+            assert response.status_code == 403
+            data = response.get_json()
+            assert data["is_valid"] is False
+            assert data["error"] == "Security Alert: Only SELECT (read-only) queries are allowed!"
+            assert data["data"] == []
+            mock_exec.assert_not_called()
+
