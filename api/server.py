@@ -97,7 +97,6 @@ def token_required(f):
         return f(*args, **kwargs)
     return decorated
 
-init_db()
 
 def create_app() -> Flask:
     """Create and configure the Flask application with CORS support."""
@@ -106,6 +105,7 @@ def create_app() -> Flask:
 
     app = Flask(__name__)
     CORS(app)
+    init_db()
 
     @app.route("/api/health", methods=["GET"])
     def health_check():
