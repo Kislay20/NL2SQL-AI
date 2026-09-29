@@ -29,6 +29,8 @@ from ai.explainer import explain_sql
 from database.database import validate_database_connection
 from sql.executor import execute_safe_query
 
+from api.database import init_db
+
 logger = logging.getLogger(__name__)
 
 FIREBASE_CREDENTIALS_PATH = PROJECT_ROOT / "firebase_credentials.json"
@@ -95,6 +97,7 @@ def token_required(f):
         return f(*args, **kwargs)
     return decorated
 
+init_db()
 
 def create_app() -> Flask:
     """Create and configure the Flask application with CORS support."""
@@ -296,4 +299,4 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     host = os.getenv("HOST", "0.0.0.0")
     print(f"🚀 NL2SQL AI Flask REST API running on http://{host}:{port}")
-    app.run(host=host, port=5000, debug=False)
+    app.run(host=host, port=port, debug=False)
