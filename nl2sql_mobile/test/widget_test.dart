@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:nl2sql_mobile/main.dart';
 import 'package:nl2sql_mobile/screens/login_screen.dart';
+import 'package:nl2sql_mobile/widgets/dynamic_bar_chart.dart';
 
 void main() {
   testWidgets('NL2SQL Mobile ChatScreen renders correctly', (WidgetTester tester) async {
@@ -23,8 +24,9 @@ void main() {
     expect(find.text('Top students in CS'), findsOneWidget);
     expect(find.text('Marks > 80'), findsOneWidget);
 
-    // Verify bottom input field and send icon
+    // Verify bottom input field, microphone button, and send icon
     expect(find.byType(TextField), findsOneWidget);
+    expect(find.byIcon(Icons.mic_none_rounded), findsOneWidget);
     expect(find.byIcon(Icons.send_rounded), findsOneWidget);
   });
 
@@ -75,5 +77,30 @@ void main() {
       name: "campus",
     );
     expect(pgUri, equals("postgresql+psycopg2://postgres:p%40ss@db.host.internal:5432/campus"));
+  });
+
+  testWidgets('DynamicBarChart renders data and detects numeric columns', (WidgetTester tester) async {
+    final sampleData = [
+      {'name': 'Rahul Sharma', 'marks': 85},
+      {'name': 'Priya Verma', 'marks': 90},
+      {'name': 'Amit Singh', 'marks': 75},
+    ];
+
+    expect(DynamicBarChart.canVisualize(sampleData), isTrue);
+    expect(DynamicBarChart.canVisualize([]), isFalse);
+    expect(DynamicBarChart.canVisualize([{'name': 'Rahul'}, {'name': 'Priya'}]), isFalse);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DynamicBarChart(records: sampleData),
+        ),
+      ),
+    );
+
+    expect(find.text('Chart: MARKS'), findsOneWidget);
+    expect(find.text('Avg: 83.3'), findsOneWidget);
+    expect(find.text('Max: 90.0'), findsOneWidget);
+    expect(find.text('Min: 75.0'), findsOneWidget);
   });
 }

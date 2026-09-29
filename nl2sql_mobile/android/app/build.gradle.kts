@@ -9,7 +9,7 @@ plugins {
 
 android {
     namespace = "com.example.nl2sql_mobile"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

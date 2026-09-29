@@ -5,9 +5,12 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'firebase_options.dart';
 import 'screens/login_screen.dart';
+import 'widgets/dynamic_bar_chart.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -155,11 +158,17 @@ class _ChatScreenState extends State<ChatScreen> {
   String _dbPass = "";
   String _dbName = "college.db";
 
+  // Speech-to-Text State
+  final stt.SpeechToText _speechToText = stt.SpeechToText();
+  bool _speechEnabled = false;
+  bool _isListening = false;
+
   @override
   void initState() {
     super.initState();
     _apiBaseUrl = _resolveDefaultApiUrl();
     _loadSettings();
+    _initSpeech();
 
     // Welcome greeting message
     _messages.add(
@@ -170,6 +179,119 @@ class _ChatScreenState extends State<ChatScreen> {
         intent: "conversational",
       ),
     );
+  }
+
+  /// Initialize speech recognition service
+  Future<void> _initSpeech() async {
+    try {
+      final available = await _speechToText.initialize(
+        onError: (val) {
+          debugPrint("SpeechToText error: ${val.errorMsg}");
+          if (mounted) setState(() => _isListening = false);
+        },
+        onStatus: (status) {
+          debugPrint("SpeechToText status: $status");
+          if (status == 'notListening' || status == 'done') {
+            if (mounted) setState(() => _isListening = false);
+          }
+        },
+      );
+      if (mounted) {
+        setState(() {
+          _speechEnabled = available;
+        });
+      }
+    } catch (e) {
+      debugPrint("SpeechToText init exception: $e");
+    }
+  }
+
+  /// Toggle speech listening state
+  Future<void> _toggleListening() async {
+    if (_isListening) {
+      await _stopListening();
+    } else {
+      await _startListening();
+    }
+  }
+
+  /// Request microphone permission and start listening for user speech
+  Future<void> _startListening() async {
+    // 1. Request microphone permission
+    final status = await Permission.microphone.request();
+    if (!status.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("🎙️ Microphone permission is required for voice query input."),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+
+    // 2. Initialize if not ready
+    if (!_speechEnabled) {
+      final available = await _speechToText.initialize(
+        onError: (val) {
+          debugPrint("SpeechToText error: ${val.errorMsg}");
+          if (mounted) setState(() => _isListening = false);
+        },
+        onStatus: (status) {
+          if (status == 'notListening' || status == 'done') {
+            if (mounted) setState(() => _isListening = false);
+          }
+        },
+      );
+      _speechEnabled = available;
+      if (!available) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Speech recognition service is unavailable on this device."),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    // 3. Start listening and update UI
+    setState(() {
+      _isListening = true;
+    });
+
+    try {
+      await _speechToText.listen(
+        onResult: (result) {
+          if (mounted) {
+            setState(() {
+              _textController.text = result.recognizedWords;
+              _textController.selection = TextSelection.fromPosition(
+                TextPosition(offset: _textController.text.length),
+              );
+            });
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint("Speech listen error: $e");
+      if (mounted) {
+        setState(() => _isListening = false);
+      }
+    }
+  }
+
+  /// Stop speech listening
+  Future<void> _stopListening() async {
+    try {
+      await _speechToText.stop();
+    } catch (_) {}
+    if (mounted) {
+      setState(() => _isListening = false);
+    }
   }
 
   static String _resolveDefaultApiUrl() {
@@ -200,6 +322,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _speechToText.stop();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -220,6 +343,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// Sends a natural language query to the Flask backend REST API with dynamic db_uri.
   Future<void> _sendMessage([String? presetQuery]) async {
+    if (_isListening) {
+      await _stopListening();
+    }
     final queryText = presetQuery ?? _textController.text.trim();
     if (queryText.isEmpty || _isLoading) return;
 
@@ -1016,6 +1142,8 @@ class _ChatScreenState extends State<ChatScreen> {
             if (msg.data != null && msg.data!.isNotEmpty) ...[
               const SizedBox(height: 10),
               _buildDataTable(msg.data!),
+              if (DynamicBarChart.canVisualize(msg.data))
+                DynamicBarChart(records: msg.data!),
             ],
           ],
         ),
@@ -1083,7 +1211,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// Bottom text input bar with send button.
+  /// Bottom text input bar with voice microphone button and send button.
   Widget _buildInputArea() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -1091,37 +1219,91 @@ class _ChatScreenState extends State<ChatScreen> {
         color: Colors.white,
         border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+          if (_isListening)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              margin: const EdgeInsets.only(bottom: 6),
               decoration: BoxDecoration(
-                color: const Color(0xFFF1F5F9),
-                borderRadius: BorderRadius.circular(24),
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.red.shade200),
               ),
-              child: TextField(
-                controller: _textController,
-                textInputAction: TextInputAction.send,
-                onSubmitted: (_) => _sendMessage(),
-                decoration: const InputDecoration(
-                  hintText: "Ask in English, Hindi, or Hinglish...",
-                  hintStyle: TextStyle(fontSize: 13, color: Colors.grey),
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.symmetric(vertical: 10),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.fiber_manual_record, color: Colors.red, size: 12),
+                  SizedBox(width: 6),
+                  Text(
+                    "Listening... Speak your query clearly",
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.red,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.only(left: 14, right: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(24),
+                    border: _isListening
+                        ? Border.all(color: Colors.red, width: 1.5)
+                        : null,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _textController,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (_) => _sendMessage(),
+                          decoration: InputDecoration(
+                            hintText: _isListening
+                                ? "Listening to your voice..."
+                                : "Ask in English, Hindi, or Hinglish...",
+                            hintStyle: TextStyle(
+                              fontSize: 13,
+                              color: _isListening ? Colors.red.shade400 : Colors.grey,
+                            ),
+                            border: InputBorder.none,
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                        ),
+                      ),
+                      // Microphone Voice Input Button
+                      IconButton(
+                        icon: Icon(
+                          _isListening ? Icons.mic : Icons.mic_none_rounded,
+                          color: _isListening ? Colors.red : const Color(0xFF64748B),
+                          size: 22,
+                        ),
+                        tooltip: _isListening ? "Listening (Tap to stop)" : "Voice Input",
+                        onPressed: _isLoading ? null : _toggleListening,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          IconButton.filled(
-            style: IconButton.styleFrom(
-              backgroundColor: const Color(0xFF4F46E5),
-              foregroundColor: Colors.white,
-            ),
-            icon: const Icon(Icons.send_rounded, size: 20),
-            onPressed: _isLoading ? null : () => _sendMessage(),
+              const SizedBox(width: 8),
+              IconButton.filled(
+                style: IconButton.styleFrom(
+                  backgroundColor: const Color(0xFF4F46E5),
+                  foregroundColor: Colors.white,
+                ),
+                icon: const Icon(Icons.send_rounded, size: 20),
+                onPressed: _isLoading ? null : () => _sendMessage(),
+              ),
+            ],
           ),
         ],
       ),
