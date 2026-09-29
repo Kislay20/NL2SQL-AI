@@ -1,0 +1,1 @@
+{"flutter":{"platforms":{"android":{"default":{"projectId":"nl2sql-saas","appId":"1:364924905234:android:4c3cf0857507d0918435cb","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"nl2sql-saas","configurations":{"android":"1:364924905234:android:4c3cf0857507d0918435cb","web":"1:364924905234:web:dcc1ab0cc57c9a8d8435cb"}}}}}}

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "364924905234",
+    "project_id": "nl2sql-saas",
+    "storage_bucket": "nl2sql-saas.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:364924905234:android:4c3cf0857507d0918435cb",
+        "android_client_info": {
+          "package_name": "com.example.nl2sql_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBVYK5AeCVmjlyJ9-mZbdLz6mw-aN3JnTc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

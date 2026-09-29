@@ -296,4 +296,4 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     host = os.getenv("HOST", "0.0.0.0")
     print(f"🚀 NL2SQL AI Flask REST API running on http://{host}:{port}")
-    app.run(host=host, port=port, debug=False)
+    app.run(host=host, port=5000, debug=False)
